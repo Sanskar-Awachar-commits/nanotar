@@ -154,22 +154,22 @@ const char* ntar_strerror(int err) {
 
 
 static int file_write(ntar_t *tar, const void *data, unsigned size) {
-  unsigned res = fwrite(data, 1, size, tar->stream);
+  unsigned res = fwrite(data, 1, size, (FILE*)tar->stream);
   return (res == size) ? NTAR_ESUCCESS : NTAR_EWRITEFAIL;
 }
 
 static int file_read(ntar_t *tar, void *data, unsigned size) {
-  unsigned res = fread(data, 1, size, tar->stream);
+  unsigned res = fread(data, 1, size, (FILE*)tar->stream);
   return (res == size) ? NTAR_ESUCCESS : NTAR_EREADFAIL;
 }
 
 static int file_seek(ntar_t *tar, unsigned offset) {
-  int res = fseek(tar->stream, offset, SEEK_SET);
+  int res = fseek((FILE*)tar->stream, offset, SEEK_SET);
   return (res == 0) ? NTAR_ESUCCESS : NTAR_ESEEKFAIL;
 }
 
 static int file_close(ntar_t *tar) {
-  fclose(tar->stream);
+  fclose((FILE*)tar->stream);
   return NTAR_ESUCCESS;
 }
 
