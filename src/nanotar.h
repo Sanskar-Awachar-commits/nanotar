@@ -15,6 +15,7 @@ extern "C"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define NTAR_VERSION "0.1.0"
 
@@ -43,25 +44,25 @@ enum {
 typedef struct {
   unsigned mode;
   unsigned owner;
-  unsigned size;
+  size_t size;
   unsigned mtime;
   unsigned type;
-  char name[100];
-  char linkname[100];
+  char name[101];
+  char linkname[101];
 } ntar_header_t;
 
 
 typedef struct ntar_t ntar_t;
 
 struct ntar_t {
-  int (*read)(ntar_t *tar, void *data, unsigned size);
-  int (*write)(ntar_t *tar, const void *data, unsigned size);
-  int (*seek)(ntar_t *tar, unsigned pos);
+  int (*read)(ntar_t *tar, void *data, size_t size);
+  int (*write)(ntar_t *tar, const void *data, size_t size);
+  int (*seek)(ntar_t *tar, size_t pos);
   int (*close)(ntar_t *tar);
   void *stream;
-  unsigned pos;
-  unsigned remaining_data;
-  unsigned last_header;
+  size_t pos;
+  size_t remaining_data;
+  size_t last_header;
 };
 
 
@@ -70,17 +71,17 @@ const char* ntar_strerror(int err);
 int ntar_open(ntar_t *tar, const char *filename, const char *mode);
 int ntar_close(ntar_t *tar);
 
-int ntar_seek(ntar_t *tar, unsigned pos);
+int ntar_seek(ntar_t *tar, size_t pos);
 int ntar_rewind(ntar_t *tar);
 int ntar_next(ntar_t *tar);
 int ntar_find(ntar_t *tar, const char *name, ntar_header_t *h);
 int ntar_read_header(ntar_t *tar, ntar_header_t *h);
-int ntar_read_data(ntar_t *tar, void *ptr, unsigned size);
+int ntar_read_data(ntar_t *tar, void *ptr, size_t size);
 
 int ntar_write_header(ntar_t *tar, const ntar_header_t *h);
-int ntar_write_file_header(ntar_t *tar, const char *name, unsigned size);
+int ntar_write_file_header(ntar_t *tar, const char *name, size_t size);
 int ntar_write_dir_header(ntar_t *tar, const char *name);
-int ntar_write_data(ntar_t *tar, const void *data, unsigned size);
+int ntar_write_data(ntar_t *tar, const void *data, size_t size);
 int ntar_finalize(ntar_t *tar);
 
 #ifdef __cplusplus

@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "nanotar.h"
 
@@ -41,13 +42,13 @@ typedef struct {
 } ntar_raw_header_t;
 
 
-static unsigned round_up(unsigned n, unsigned incr) {
+static size_t round_up(size_t n, size_t incr) {
   return n + (incr - n % incr) % incr;
 }
 
 
 static unsigned checksum(const ntar_raw_header_t* rh) {
-  unsigned i;
+  size_t i;
   unsigned char *p = (unsigned char*) rh;
   unsigned res = 256;
   for (i = 0; i < offsetof(ntar_raw_header_t, checksum); i++) {
@@ -60,14 +61,14 @@ static unsigned checksum(const ntar_raw_header_t* rh) {
 }
 
 
-static int tread(ntar_t *tar, void *data, unsigned size) {
+static int tread(ntar_t *tar, void *data, size_t size) {
   int err = tar->read(tar, data, size);
   tar->pos += size;
   return err;
 }
 
 
-static int twrite(ntar_t *tar, const void *data, unsigned size) {
+static int twrite(ntar_t *tar, const void *data, size_t size) {
   int err = tar->write(tar, data, size);
   tar->pos += size;
   return err;
@@ -105,11 +106,13 @@ static int raw_to_header(ntar_header_t *h, const ntar_raw_header_t *rh) {
   /* Load raw header into header */
   sscanf(rh->mode, "%o", &h->mode);
   sscanf(rh->owner, "%o", &h->owner);
-  sscanf(rh->size, "%o", &h->size);
+  sscanf(rh->size, "%zo", &h->size);
   sscanf(rh->mtime, "%o", &h->mtime);
   h->type = rh->type;
-  strcpy(h->name, rh->name);
-  strcpy(h->linkname, rh->linkname);
+  memcpy(h->name, rh->name, 100);
+  h->name[100] = '\0';
+  memcpy(h->linkname, rh->linkname, 100);
+  h->linkname[100] = '\0';
 
   return NTAR_ESUCCESS;
 }
@@ -122,11 +125,11 @@ static int header_to_raw(ntar_raw_header_t *rh, const ntar_header_t *h) {
   memset(rh, 0, sizeof(*rh));
   sprintf(rh->mode, "%o", h->mode);
   sprintf(rh->owner, "%o", h->owner);
-  sprintf(rh->size, "%o", h->size);
+  sprintf(rh->size, "%zo", h->size);
   sprintf(rh->mtime, "%o", h->mtime);
   rh->type = h->type ? h->type : NTAR_TREG;
-  strcpy(rh->name, h->name);
-  strcpy(rh->linkname, h->linkname);
+  strncpy(rh->name, h->name, 100);
+  strncpy(rh->linkname, h->linkname, 100);
 
   /* Calculate and write checksum */
   chksum = checksum(rh);
@@ -153,17 +156,17 @@ const char* ntar_strerror(int err) {
 }
 
 
-static int file_write(ntar_t *tar, const void *data, unsigned size) {
-  unsigned res = fwrite(data, 1, size, (FILE*)tar->stream);
+static int file_write(ntar_t *tar, const void *data, size_t size) {
+  size_t res = fwrite(data, 1, size, (FILE*)tar->stream);
   return (res == size) ? NTAR_ESUCCESS : NTAR_EWRITEFAIL;
 }
 
-static int file_read(ntar_t *tar, void *data, unsigned size) {
-  unsigned res = fread(data, 1, size, (FILE*)tar->stream);
+static int file_read(ntar_t *tar, void *data, size_t size) {
+  size_t res = fread(data, 1, size, (FILE*)tar->stream);
   return (res == size) ? NTAR_ESUCCESS : NTAR_EREADFAIL;
 }
 
-static int file_seek(ntar_t *tar, unsigned offset) {
+static int file_seek(ntar_t *tar, size_t offset) {
   int res = fseek((FILE*)tar->stream, offset, SEEK_SET);
   return (res == 0) ? NTAR_ESUCCESS : NTAR_ESEEKFAIL;
 }
@@ -213,7 +216,7 @@ int ntar_close(ntar_t *tar) {
 }
 
 
-int ntar_seek(ntar_t *tar, unsigned pos) {
+int ntar_seek(ntar_t *tar, size_t pos) {
   int err = tar->seek(tar, pos);
   tar->pos = pos;
   return err;
@@ -228,7 +231,8 @@ int ntar_rewind(ntar_t *tar) {
 
 
 int ntar_next(ntar_t *tar) {
-  int err, n;
+  int err;
+  size_t n;
   ntar_header_t h;
   /* Load header */
   err = ntar_read_header(tar, &h);
@@ -287,7 +291,7 @@ int ntar_read_header(ntar_t *tar, ntar_header_t *h) {
 }
 
 
-int ntar_read_data(ntar_t *tar, void *ptr, unsigned size) {
+int ntar_read_data(ntar_t *tar, void *ptr, size_t size) {
   int err;
   /* If we have no remaining data then this is the first read, we get the size,
    * set the remaining data and seek to the beginning of the data */
@@ -329,11 +333,12 @@ int ntar_write_header(ntar_t *tar, const ntar_header_t *h) {
 }
 
 
-int ntar_write_file_header(ntar_t *tar, const char *name, unsigned size) {
+int ntar_write_file_header(ntar_t *tar, const char *name, size_t size) {
   ntar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  strcpy(h.name, name);
+  strncpy(h.name, name, 100); 
+  h.name[100] = '\0';
   h.size = size;
   h.type = NTAR_TREG;
   h.mode = 0664;
@@ -346,7 +351,8 @@ int ntar_write_dir_header(ntar_t *tar, const char *name) {
   ntar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  strcpy(h.name, name);
+  strncpy(h.name, name, 100); 
+  h.name[100] = '\0';
   h.type = NTAR_TDIR;
   h.mode = 0775;
   /* Write header */
@@ -354,7 +360,7 @@ int ntar_write_dir_header(ntar_t *tar, const char *name) {
 }
 
 
-int ntar_write_data(ntar_t *tar, const void *data, unsigned size) {
+int ntar_write_data(ntar_t *tar, const void *data, size_t size) {
   int err;
   /* Write data */
   err = twrite(tar, data, size);
