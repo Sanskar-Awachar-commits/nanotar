@@ -47,7 +47,7 @@ typedef struct {
   size_t size;
   unsigned mtime;
   unsigned type;
-  char name[101];
+  char name[257];
   char linkname[101];
 } ntar_header_t;
 

@@ -39,7 +39,15 @@ typedef struct {
   char checksum[8];
   char type;
   char linkname[100];
-  char _padding[255];
+  /* ustar fields begin here */
+  char magic[6];      /* "ustar" + \0 */
+  char version[2];    /* "00" */
+  char uname[32];
+  char gname[32];
+  char devmajor[8];
+  char devminor[8];
+  char prefix[155];
+  char _padding[12];  /* Remaining bytes to reach 512 */
 } ntar_raw_header_t;
 #pragma pack(pop)
 
@@ -99,21 +107,28 @@ static int raw_to_header(ntar_header_t *h, const ntar_raw_header_t *rh) {
 
   /* Build and compare checksum */
   chksum1 = checksum(rh);
-  sscanf(rh->checksum, "%o", &chksum2);
+  if (sscanf(rh->checksum, "%8o", &chksum2) != 1) return NTAR_EBADCHKSUM;
   if (chksum1 != chksum2) {
     return NTAR_EBADCHKSUM;
   }
 
   /* Load raw header into header */
-  sscanf(rh->mode, "%7o", &h->mode);   // max 7 octal chars + space/null
-  sscanf(rh->owner, "%7o", &h->owner);
-  sscanf(rh->size, "%11zo", &h->size); // max 11 octal chars + space/null
-  sscanf(rh->mtime, "%11o", &h->mtime);
+  if (sscanf(rh->mode, "%7o", &h->mode) != 1) h->mode = 0;
+  if (sscanf(rh->owner, "%7o", &h->owner) != 1) h->owner = 0;
+  if (sscanf(rh->size, "%11zo", &h->size) != 1) h->size = 0;
+  if (sscanf(rh->mtime, "%11o", &h->mtime) != 1) h->mtime = 0;
   h->type = rh->type;
-  memcpy(h->name, rh->name, 100);
-  h->name[100] = '\0';
-  memcpy(h->linkname, rh->linkname, 100);
-  h->linkname[100] = '\0';
+
+  /* --- ustar long path reconstruction --- */
+  memset(h->name, 0, sizeof(h->name));
+  /* Check for ustar magic bytes */
+  if (memcmp(rh->magic, "ustar", 5) == 0 && rh->prefix[0] != '\0') {
+    strncat(h->name, rh->prefix, 155);
+    strcat(h->name, "/");
+  }
+  strncat(h->name, rh->name, 100);
+  memset(h->linkname, 0, sizeof(h->linkname));
+  strncpy(h->linkname, rh->linkname, 100);
 
   return NTAR_ESUCCESS;
 }
@@ -121,6 +136,7 @@ static int raw_to_header(ntar_header_t *h, const ntar_raw_header_t *rh) {
 
 static int header_to_raw(ntar_raw_header_t *rh, const ntar_header_t *h) {
   unsigned chksum;
+  size_t name_len;
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
@@ -129,7 +145,31 @@ static int header_to_raw(ntar_raw_header_t *rh, const ntar_header_t *h) {
   sprintf(rh->size, "%011zo", h->size); 
   sprintf(rh->mtime, "%011o", h->mtime);
   rh->type = h->type ? h->type : NTAR_TREG;
-  strncpy(rh->name, h->name, 100);
+
+  /* --- ustar injection --- */
+  memcpy(rh->magic, "ustar", 6);
+  memcpy(rh->version, "00", 2);
+
+  /* --- ustar path splitting --- */
+  name_len = strlen(h->name);
+  if (name_len > 100) {
+    const char *split_pos = strchr(h->name + (name_len - 100), '/');
+    if (!split_pos) {
+      strncpy(rh->name, h->name, 100);
+    }
+    else {
+      size_t prefix_len = split_pos - h->name;
+      if (prefix_len > 155) {
+          return NTAR_EFAILURE;
+      }
+      strncpy(rh->prefix, h->name, prefix_len);
+      strncpy(rh->name, split_pos + 1, 100);
+    }
+  }
+  else {
+    strncpy(rh->name, h->name, 100);
+  }
+
   strncpy(rh->linkname, h->linkname, 100);
 
   /* Calculate and write checksum */
@@ -338,8 +378,8 @@ int ntar_write_file_header(ntar_t *tar, const char *name, size_t size) {
   ntar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  strncpy(h.name, name, 100); 
-  h.name[100] = '\0';
+  strncpy(h.name, name, 256);
+  h.name[256] = '\0';
   h.size = size;
   h.type = NTAR_TREG;
   h.mode = 0664;
@@ -347,13 +387,12 @@ int ntar_write_file_header(ntar_t *tar, const char *name, size_t size) {
   return ntar_write_header(tar, &h);
 }
 
-
 int ntar_write_dir_header(ntar_t *tar, const char *name) {
   ntar_header_t h;
   /* Build header */
   memset(&h, 0, sizeof(h));
-  strncpy(h.name, name, 100); 
-  h.name[100] = '\0';
+  strncpy(h.name, name, 256);
+  h.name[256] = '\0';
   h.type = NTAR_TDIR;
   h.mode = 0775;
   /* Write header */
