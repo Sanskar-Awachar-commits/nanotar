@@ -28,6 +28,7 @@
 
 #include "nanotar.h"
 
+#pragma pack(push, 1)
 typedef struct {
   char name[100];
   char mode[8];
@@ -40,7 +41,7 @@ typedef struct {
   char linkname[100];
   char _padding[255];
 } ntar_raw_header_t;
-
+#pragma pack(pop)
 
 static size_t round_up(size_t n, size_t incr) {
   return n + (incr - n % incr) % incr;
@@ -104,10 +105,10 @@ static int raw_to_header(ntar_header_t *h, const ntar_raw_header_t *rh) {
   }
 
   /* Load raw header into header */
-  sscanf(rh->mode, "%o", &h->mode);
-  sscanf(rh->owner, "%o", &h->owner);
-  sscanf(rh->size, "%zo", &h->size);
-  sscanf(rh->mtime, "%o", &h->mtime);
+  sscanf(rh->mode, "%7o", &h->mode);   // max 7 octal chars + space/null
+  sscanf(rh->owner, "%7o", &h->owner);
+  sscanf(rh->size, "%11zo", &h->size); // max 11 octal chars + space/null
+  sscanf(rh->mtime, "%11o", &h->mtime);
   h->type = rh->type;
   memcpy(h->name, rh->name, 100);
   h->name[100] = '\0';
@@ -123,10 +124,10 @@ static int header_to_raw(ntar_raw_header_t *rh, const ntar_header_t *h) {
 
   /* Load header into raw header */
   memset(rh, 0, sizeof(*rh));
-  sprintf(rh->mode, "%o", h->mode);
-  sprintf(rh->owner, "%o", h->owner);
-  sprintf(rh->size, "%zo", h->size);
-  sprintf(rh->mtime, "%o", h->mtime);
+  sprintf(rh->mode, "%07o", h->mode);
+  sprintf(rh->owner, "%07o", h->owner);
+  sprintf(rh->size, "%011zo", h->size); 
+  sprintf(rh->mtime, "%011o", h->mtime);
   rh->type = h->type ? h->type : NTAR_TREG;
   strncpy(rh->name, h->name, 100);
   strncpy(rh->linkname, h->linkname, 100);
